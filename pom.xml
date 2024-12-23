@@ -55,9 +55,9 @@
 
     <dependencies>
         <dependency>
-            <groupId>com.github.orrish-automation</groupId>
+            <groupId>com.github.OrrishLabs</groupId>
             <artifactId>image-compare</artifactId>
-            <version>0.0.1</version>
+            <version>0.0.3</version>
         </dependency>
         <dependency>
             <groupId>com.aventstack</groupId>

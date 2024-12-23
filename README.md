@@ -9,7 +9,8 @@ This is an example of how to consume the image-compare library provided by Orris
 3. Keep diff files under diff-images folder
 4. Ensure the data in visual-comparison-data.csv is populated properly.
 5. Create a jar with command ```mvn clean compile assembly:single```
-6. Run the jar with below usage example.
+6. A jar file will be created under target folder. Move this jar file to the location where you have actual and baseline images. 
+7. Now run the jar with command ```java -jar image-compare-with-report-0.0.1.jar``` and pass the parameters as needed as below.
 
 ###### Usage example
 ```
