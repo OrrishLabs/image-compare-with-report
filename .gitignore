@@ -89,3 +89,4 @@ actual-images
 baseline-images
 diff-images
 visual-regression.html
+visual-regression-junit.xml

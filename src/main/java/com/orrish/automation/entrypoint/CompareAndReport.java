@@ -7,9 +7,14 @@ import com.aventstack.extentreports.reporter.ExtentHtmlReporter;
 import com.opencsv.bean.CsvToBean;
 import com.opencsv.bean.CsvToBeanBuilder;
 import com.orrish.automation.model.CompareSpec;
+import org.w3c.dom.Element;
 
-import javax.imageio.ImageIO;
-import java.awt.*;
+import javax.xml.parsers.DocumentBuilder;
+import javax.xml.parsers.DocumentBuilderFactory;
+import javax.xml.transform.Transformer;
+import javax.xml.transform.TransformerFactory;
+import javax.xml.transform.dom.DOMSource;
+import javax.xml.transform.stream.StreamResult;
 import java.io.File;
 import java.io.Reader;
 import java.nio.file.Files;
@@ -18,6 +23,7 @@ import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
+import java.util.LinkedList;
 import java.util.List;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -92,6 +98,7 @@ public class CompareAndReport {
             result = walk.filter(Files::isRegularFile).collect(Collectors.toList());
         }
         HashMap<Status, Integer> totalResult = new HashMap<>();
+        LinkedList<Object> resultLinkedList = new LinkedList<>();
         totalResult.put(Status.PASS, 0);
         totalResult.put(Status.FAIL, 0);
         for (Path eachActualImagePath : result) {
@@ -117,12 +124,13 @@ public class CompareAndReport {
                 extentTest.fail("No Baseline : " + extentTest.addScreenCaptureFromPath(eachActualImagePath.toString()));
                 System.out.println(Status.FAIL + " :: " + fileName + " :: No baseline");
                 totalResult.put(Status.FAIL, totalResult.get(Status.FAIL) + 1);
+                resultLinkedList.add("No baseline");
                 continue;
             }
-            ImageCompare imageCompare = new ImageCompare()
-                    .setActual(ImageIO.read(eachActualImagePath.toFile()))
-                    .setBaseline(ImageIO.read(baselinePath.toFile()));
-
+            CompareImage imageCompare = new CompareImage()
+                    .setActualFile(eachActualImagePath.toString())
+                    .setBaselineFile(baselinePath.toString())
+                    .setDiffFile(diffPath.toString());
             try {
                 if (!ignoreArea.trim().isEmpty()) {
                     String[] areas = ignoreArea.split(",");
@@ -136,18 +144,16 @@ public class CompareAndReport {
                 extentTest.fail("Some issues with ignore area input for : " + fileName + System.lineSeparator() + ex);
                 continue;
             }
-            CompareResult compareResult = imageCompare.compareImage();
+            CompareResult compareResult = imageCompare.compare();
 
-            if (compareResult.isSame()) {
+            if (compareResult.isSameWithIgnoreArea()) {
                 totalResult.put(Status.PASS, totalResult.get(Status.PASS) + 1);
             } else {
                 totalResult.put(Status.FAIL, totalResult.get(Status.FAIL) + 1);
             }
-            compareResult.setDiffColor(Color.RED)
-                    .setDiffFile(diffImageFolderName + File.separator + fileName)
-                    .saveDiffImage();
+            resultLinkedList.add(compareResult);
 
-            Status status = compareResult.isSame() ? Status.PASS : Status.FAIL;
+            Status status = compareResult.isSameWithIgnoreArea() ? Status.PASS : Status.FAIL;
             if (status == Status.PASS && deleteBaselineForPass) {
                 baselinePath.toFile().delete();
                 extentTest.log(status, "" + extentTest.addScreenCaptureFromPath(eachActualImagePath.toString()));
@@ -160,13 +166,14 @@ public class CompareAndReport {
             System.out.println(status + " :: " + fileName + " :: Total pix diff: " + compareResult.getDiffPixelCount()
                     + ", Total pix : " + compareResult.getTotalPixelCount()
                     + ", Total pix diff %age: " + compareResult.getDiffPixelPercentage()
-                    + ", isSame: " + compareResult.isSame());
+                    + ", isSame: " + compareResult.isSameWithIgnoreArea());
         }
         int pass = totalResult.get(Status.PASS);
         int fail = totalResult.get(Status.FAIL);
         int total = pass + fail;
         System.out.println("Visual Check: " + (pass == total ? "PASS" : "FAIL") + " : Pass - " + pass + ", Fail - " + fail + ", Total - " + total);
         extentReports.flush();
+        generateJUnitReport(resultLinkedList);
     }
 
     private static ExtentReports initializeExtentReport() {
@@ -186,6 +193,39 @@ public class CompareAndReport {
 
     private static int getX(String area) {
         return Integer.parseInt(area.split("X")[0]);
+    }
+
+    private static void generateJUnitReport(LinkedList<Object> resultLinkedList) {
+        try {
+            DocumentBuilderFactory dbFactory = DocumentBuilderFactory.newInstance();
+            DocumentBuilder dBuilder = dbFactory.newDocumentBuilder();
+            org.w3c.dom.Document doc = dBuilder.newDocument();
+            org.w3c.dom.Element suiteElement = doc.createElement("testsuite");
+            doc.appendChild(suiteElement);
+            suiteElement.setAttribute("name", "Visual Regression");
+            for (Object eachResult : resultLinkedList) {
+                Element testcase = doc.createElement("testcase");
+                String name = (eachResult instanceof CompareResult) ? ((CompareResult) eachResult).getActualImageName() : (String) eachResult;
+                testcase.setAttribute("name", name);
+                suiteElement.appendChild(testcase);
+                if ((eachResult instanceof String) || (eachResult instanceof CompareResult && !((CompareResult) eachResult).isSameWithIgnoreArea())) {
+                    Element failureTestCase = doc.createElement("failure");
+                    failureTestCase.setAttribute("message", "Verification failed");
+                    testcase.appendChild(failureTestCase);
+                }
+            }
+            TransformerFactory transformerFactory = TransformerFactory.newInstance();
+            Transformer transformer = transformerFactory.newTransformer();
+            DOMSource source = new DOMSource(doc);
+            File file = new File("visual-regression-junit.xml");
+            if (file.exists()) file.delete();
+            file.createNewFile();
+            StreamResult result = new StreamResult(new File(file.getPath()));
+            transformer.transform(source, result);
+        } catch (Exception ex) {
+            System.out.println("There were some errors in producing junit result.");
+            ex.printStackTrace();
+        }
     }
 
 }
